@@ -23,6 +23,7 @@ import sys, os, traceback
 import xlwt
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from seleniumrequests import Chrome
 from datetime import datetime, timedelta
 import calendar
 
@@ -33,6 +34,7 @@ import calendar
 # strdate = 20180202
 # print(strdate)
 
+CMD_CHROMEDRIVER="/Applications/chromedriver"
 MAX_RETRIES = 3
 
 
@@ -91,90 +93,95 @@ def preday_search():
         else:
             break
 
+    # 종목코드 리스트 저장(각각을 딕셔너리에 넣고, 리스트에 추가)
     # print(preday)
     return preday
 
 
 # ETF LP별 매매동향
-def etf_lp_trading_trends(basedate, driver):
+def etf_lp_trading_trends(driver, basedate):
     # url 접근
     driver.get('http://marketdata.krx.co.kr/mdi#document=13040106')
+    chdrv.implicitly_wait(20)
     html = driver.page_source  # 페이지의 elements 모두 가져오기
     soup = BeautifulSoup(html, 'html.parser')
-    print("soup:", soup)
     all_select = soup.find_all("select", {'name': 'isu_cd'})
-    print("select:", all_select)
-    return
-    # 종목코드 리스트 저장(각각을 딕셔너리에 넣고, 리스트에 추가)
+    #print("select:", all_select)
     isu_cd_list = []
-    for l_select in select:
-        for l_option in l_select.find_all('option'):
+    for s in all_select:
+        for o in s.find_all('option'):
             isu_cd = {}
-            isu_cd['isu_cd'] = l_option.get('value')
-            isu_cd['isu_nm'] = l_option.text
+            isu_cd['isu_cd'] = o.get('value')
+            isu_cd['isu_nm'] = o.text
             # 종목코드 전체(ALL)는 제외
             if isu_cd['isu_cd'] != 'ALL':
                 isu_cd_list.append(isu_cd)
 
-    print('isu_cd:', isu_cd_list)
-    for i in isu_cd_list:
-        print(i['isu_cd'], i['isu_nm'])
-    print('x'*100)
-    return
+    #for i in isu_cd_list:
+        #print(i['isu_cd'], i['isu_nm'])
+    #print('x'*100)
 
     # 종목별로 결과를 합치기 위해 빈 DataFrame을 정의해준다
     dfs = pd.DataFrame([{"일자": "일자", "종목코드": "종목코드", "종목명": "종목명", "상품구분": "상품구분", "매도LP명": "매도LP명", "매도거래량": "매도거래량","매도거래대금": "매도거래대금", "매수LP명": "매수LP명", "매수거래량": "매수거래량", "매수거래대금": "매수거래대금"}])
 
+    print("ISU list", isu_cd_list)
     for i in isu_cd_list:
         print(i['isu_cd'], i['isu_nm'])
 
-        url_tmpl = 'http://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F13%2F1304%2F13040106%2Fmkd13040106&name=form&_={}'
-        url = url_tmpl.format(int(time.time() * 1000))
-        # r = requests.get(url)
-        session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
-        session.mount('https://', adapter)
-        session.mount('http://', adapter)
-        r = session.get(url)
-        code = r.text
+        try:
+            url_tmpl = 'http://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F13%2F1304%2F13040106%2Fmkd13040106&name=form&_={}'
+            url = url_tmpl.format(int(time.time() * 1000))
+            # r = requests.get(url)
+            #session = requests.Session()
+            #adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
+            #session.mount('https://', adapter)
+            #session.mount('http://', adapter)
+            #r = session.get(url)
+            #code = r.text
+            driver.get(url)
+            chdrv.implicitly_wait(20)
+            html = driver.page_source  # 페이지의 elements 모두 가져오기
+            soup = BeautifulSoup(html, 'html.parser')
 
-        url = 'http://marketdata.krx.co.kr/contents/MKD/99/MKD99000001.jspx'
-        data = {
-            'domforn': '00',  # 기초시장
-            'uly_gubun': '00',  # 기초자산
-            'gubun': '00',  # 추적배수
-            'isu_cd': i['isu_cd'],  # 종목
-            'fromdate': basedate,  # 전일
-            'todate': basedate,  # 전일
-            'pagePath': '/contents/MKD/13/1304/13040106/MKD13040106.jsp',
-            'code': code,
-            'pageFirstCall': 'Y'
-        }
-
-       # r = requests.post(url, data=data)
-        session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
-        session.mount('https://', adapter)
-        session.mount('http://', adapter)
-        r = session.post(url, data=data)
-
+            url = 'http://marketdata.krx.co.kr/contents/MKD/99/MKD99000001.jspx'
+            data = {
+                'domforn': '00',  # 기초시장
+                'uly_gubun': '00',  # 기초자산
+                'gubun': '00',  # 추적배수
+                'isu_cd': i['isu_cd'],  # 종목
+                'fromdate': basedate,  # 전일
+                'todate': basedate,  # 전일
+                'pagePath': '/contents/MKD/13/1304/13040106/MKD13040106.jsp',
+                'code': soup.text,
+                'pageFirstCall': 'Y'
+            }
+            session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
+            session.mount('https://', adapter)
+            session.mount('http://', adapter)
+            r = session.post(url, data=data)
+            print(r.text)
+            return None
+        except Exception as ex:
+            print("Exception:", ex)
+            return None
 
         try:
             df = json_normalize(json.loads(r.text), 'block1')
-            # print(df)
+            print(df)
             df = df[['mem_kor_shrt_nm_ofr', 'sofr_vl', 'sofr_amt', 'mem_kor_shrt_nm_bid', 'sbid_vl', 'sbid_amt']]
             df.columns = ['매도LP명', '매도거래량', '매도거래대금', '매수LP명', '매수거래량', '매수거래대금']
-            #df = df.assign(일자=basedate)
-            #df = df.assign(종목코드=i['isu_cd'])
-            #df = df.assign(종목명=i['isu_nm'])
-            #df = df.assign(상품구분='ETF')
+            df = df.assign(일자=basedate)
+            df = df.assign(종목코드=i['isu_cd'])
+            df = df.assign(종목명=i['isu_nm'])
+            df = df.assign(상품구분='ETF')
             df['매도LP명'] = df['매도LP명'].str.replace('㈜', '').str.replace('\(주\)', '')
             df['매도거래량'] = df['매도거래량'].str.replace(',', '')
             df['매도거래대금'] = df['매도거래대금'].str.replace(',', '')
             df['매수LP명'] = df['매수LP명'].str.replace('㈜', '').str.replace('\(주\)', '')
             df['매수거래량'] = df['매수거래량'].str.replace(',', '')
             df['매수거래대금'] = df['매수거래대금'].str.replace(',', '')
-            # print(df)
+            print(df)
             # 종목별로 결과를 합쳐 dfs에 저장
             dfs = pd.concat([dfs, df])
         except Exception as ex:
@@ -185,7 +192,7 @@ def etf_lp_trading_trends(basedate, driver):
 
 
 # ETN LP별 매매동향
-def etn_lp_trading_trends(basedate, driver):
+def etn_lp_trading_trends(drier, basedate):
     # url 접근
     driver.get('http://marketdata.krx.co.kr/mdi#document=13040206')
     html = driver.page_source  # 페이지의 elements 모두 가져오기
@@ -290,14 +297,13 @@ try:
     chopts.add_argument('disable-gpu')  # 그래픽가속 사용하지 않음
     print("="*80)
     # 크롬 웹드라이버 위치를 지정해준다
-    chdrv = webdriver.Chrome('/Volumes/MD/__PYTHON__/lp/ChromeDriver4Mac/chromedriver', options=chopts)
+    chdrv = webdriver.Chrome(CMD_CHROMEDRIVER, options=chopts)
     # 암묵적으로 웹 자원 로드를 위해 최대 60초까지 기다려 준다.
     chdrv.implicitly_wait(60)
 
-    dfs_etf = etf_lp_trading_trends(base_date, chdrv)
-    print("#-"*80)
+    dfs_etf = etf_lp_trading_trends(chdrv, base_date)
     sys.exit(0)
-    dfs_etn = etn_lp_trading_trends(base_date, chdrv)
+    dfs_etn = etn_lp_trading_trends(chdrv, base_date)
 
     # 웹드라이버 닫기
     driver.close()
