@@ -23,29 +23,30 @@ import sys
 import time
 import traceback
 
+MAX_TIMEOUT = 30
+MAX_RETRIES = 6
 USER_AGENT = {
     "Darwin": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.97 Safari/537.36",
     "Windows": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.97 Safari/537.36"
 }
-
-MAX_TIMEOUT = 30
-MAX_RETRIES = 6
+# 크롬드라이버 위치
 CMD_CHROMEDRIVER = '/Applications/chromedriver'
 
-URL_FMT_GET_TRADE_DATE_CODE = 'https://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F01%2F0110%2F01100305%2Fmkd01100305_01&name=form&_={}'
-URL_GET_TRADE_DATE = 'https://marketdata.krx.co.kr/contents/MKD/99/MKD99000001.jspx'
-PARAMS_GET_TRADE_DATE_GRIDTP = 'KRX'
-PARAMS_GET_TRADE_DATE_PAGEPATH = '/contents/MKD/01/0110/01100305/MKD01100305.jsp'
+# 아래 URL과 기타 파라미터값들은 사이트가 변경되었을경우, 적절하게 조정해야함.
+URL_GET_INFO = 'https://marketdata.krx.co.kr/contents/MKD/99/MKD99000001.jspx'
+# 휴장일정보용
+URL_GEN_OTP4DATE = 'https://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F01%2F0110%2F01100305%2Fmkd01100305_01&name=form&_={}'
+PARAMS_DATE_PAGEPATH = '/contents/MKD/01/0110/01100305/MKD01100305.jsp'
+# ETF용
+URL_GEN_OTP4ETF = 'https://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F13%2F1304%2F13040106%2Fmkd13040106&name=form&_={}'
+URL_GET_ETF_LIST = 'https://marketdata.krx.co.kr/mdi#document=13040106'
+PARAMS_ETF_PAGEPATH = '/contents/MKD/13/1304/13040106/MKD13040106.jsp'
+# ETN용
+URL_GEN_OTP4ETN = 'https://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F13%2F1304%2F13040206%2Fmkd13040206&name=form&_={}'
+URL_GET_ETN_LIST = 'https://marketdata.krx.co.kr/mdi#document=13040206'
+PARAMS_ETN_PAGEPATH = '/contents/MKD/13/1304/13040206/MKD13040206.jsp'
 
-URL_FMT_GET_ETF_CODE = 'https://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F13%2F1304%2F13040106%2Fmkd13040106&name=form&_={}'
-URL_GET_ETF_ISU_LIST = 'https://marketdata.krx.co.kr/mdi#document=13040106'
-
-URL_FMT_GET_ETN_CODE = 'https://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=MKD%2F13%2F1304%2F13040206%2Fmkd13040206&name=form&_={}'
-URL_GET_ETN_ISU_LIST = 'https://marketdata.krx.co.kr/mdi#document=13040206'
-PARAMS_GET_ETF_INFO_PAGEPATH = '/contents/MKD/13/1304/13040106/MKD13040106.jsp'
-PARAMS_GET_ETN_INFO_PAGEPATH = '/contents/MKD/13/1304/13040206/MKD13040206.jsp'
-URL_GET_ETP_INFO = 'https://marketdata.krx.co.kr/contents/MKD/99/MKD99000001.jspx'
-
+# Dataframe 초기화용
 EMPTY_DATAFRAME = pandas.DataFrame([{
                                         "일자": "일자",
                                         "종목코드": "종목코드",
@@ -83,33 +84,31 @@ def load_webdriver():
     chdrv.implicitly_wait(60)
     return chdrv
 
-def get_pre_trade_date():
-    headers = {'User-Agent': USER_AGENT[platform.system()]}
-    url = URL_FMT_GET_TRADE_DATE_CODE.format(int(time.time() * 1000))
+
+def get_session_code(url, headers):
+    return requests_retry_session().get(url, headers=headers, timeout=MAX_TIMEOUT)
+
+
+def get_pre_trade_date(headers):
     try:
-        html_trade_date_code = requests_retry_session().get(url, headers=headers, timeout=MAX_TIMEOUT)
-        if not len(html_trade_date_code.text):
-            print("[TRADE_DATE_CODE] : Can't get code")
-            return -1
+        code = get_session_code(URL_GEN_OTP4DATE.format(int(time.time() * 1000)), headers)
     except Exception as ex:
-        print("[TRADE_DATE_CODE] ", ex)
+        print("[TRADE_DATE] Can't get session code : ", ex)
         outputFile = open('lp_trading_trends_error.txt', 'w')
         traceback.print_exc(file=outputFile)
         outputFile.close()
         return -1
-    # print('It worked : ', html_trade_date_code.status_code)
-    # print('[TRADE_DATE_CODE] : ', len(html_trade_date_code.text), ' (',html_trade_date_code.text, ')')
 
     try:
         date_yyyy = datetime.now().strftime('%Y')
         params_get_trade_date = {
             'search_bas_yy': date_yyyy,  # 검색년도(YYYY)
-            'gridTp': PARAMS_GET_TRADE_DATE_GRIDTP,  # 거래소구분
-            'pagePath': PARAMS_GET_TRADE_DATE_PAGEPATH,  # 페이지경로
-            'code': html_trade_date_code.text,
+            'gridTp': 'KRX',  # 거래소구분
+            'pagePath': PARAMS_DATE_PAGEPATH,  # 페이지경로
+            'code': code.text,
             'pageFirstCall': 'Y'
         }
-        html_trade_date = requests_retry_session().post(URL_GET_TRADE_DATE, data=params_get_trade_date, headers=headers,
+        html_trade_date = requests_retry_session().post(URL_GET_INFO, data=params_get_trade_date, headers=headers,
                                                         timeout=MAX_TIMEOUT)
     except Exception as ex:
         print("[TRADE_DATE] ", ex)
@@ -117,9 +116,6 @@ def get_pre_trade_date():
         traceback.print_exc(file=outputFile)
         outputFile.close()
         return -1
-    # print('It worked : ', html_trade_date.status_code)
-    # print('[TRADE_DATE] : (', html_trade_date.text, ')')
-
     # TRADE_DATE가 들어있는 HTML 페이지를 JSON 포맷으로 변환후, 지정태그가 있는것만 추출한다.
     try:
         df_hdays = json_normalize(json.loads(html_trade_date.text), 'block1')
@@ -196,10 +192,6 @@ def etp_get_isu_list(url):
     return isu_cd_list
 
 
-def etp_get_session_code(url, headers):
-    return requests_retry_session().get(url, headers=headers, timeout=MAX_TIMEOUT)
-
-
 def etp_get_isu_info(url, isu, tradedate, pagepath, code, headers):
     params = {
         'domforn': '00',  # 기초시장
@@ -241,12 +233,12 @@ def etp_convert_isuinfo_to_dataframe(html, tradedate, isu, etp_type):
 def etf_lp_trading_trends(tradedate, headers):
     driver = load_webdriver()
     dfs = copy.deepcopy(EMPTY_DATAFRAME)
-    isu_cd_list = etp_get_isu_list(URL_GET_ETF_ISU_LIST)
+    isu_cd_list = etp_get_isu_list(URL_GET_ETF_LIST)
     if isu_cd_list is None:
         driver.quit()
         return dfs
     try:
-        code = etp_get_session_code(URL_FMT_GET_ETF_CODE.format(int(time.time() * 1000)), headers)
+        code = get_session_code(URL_GEN_OTP4ETF.format(int(time.time() * 1000)), headers)
     except Exception as ex:
         print("[ETF] Can't get session code : ", ex)
         outputFile = open('lp_trading_trends_error.txt', 'w')
@@ -255,10 +247,11 @@ def etf_lp_trading_trends(tradedate, headers):
         driver.quit()
         return dfs
 
+    total_cnt = len(isu_cd_list)
     for idx, isu in enumerate(isu_cd_list):
         try:
-            print(idx, ':', isu['isu_cd'], '[', isu['isu_nm'], ']')
-            html_isu_info = etp_get_isu_info(URL_GET_ETP_INFO, isu, tradedate, PARAMS_GET_ETF_INFO_PAGEPATH, code.text, headers)
+            print('[ETF] ', idx, '/', total_cnt, ' : ', isu['isu_cd'], '[', isu['isu_nm'], ']')
+            html_isu_info = etp_get_isu_info(URL_GET_INFO, isu, tradedate, PARAMS_ETF_PAGEPATH, code.text, headers)
         except Exception as ex:
             print("[ETF] Can't get ISU info : ", ex)
             outputFile = open('lp_trading_trends_error.txt', 'w')
@@ -282,12 +275,12 @@ def etf_lp_trading_trends(tradedate, headers):
 def etn_lp_trading_trends(tradedate, headers):
     driver = load_webdriver()
     dfs = copy.deepcopy(EMPTY_DATAFRAME)
-    isu_cd_list = etp_get_isu_list(URL_GET_ETN_ISU_LIST)
+    isu_cd_list = etp_get_isu_list(URL_GET_ETN_LIST)
     if isu_cd_list is None:
         driver.quit()
         return dfs
     try:
-        code = etp_get_session_code(URL_FMT_GET_ETN_CODE.format(int(time.time() * 1000)), headers)
+        code = get_session_code(URL_GEN_OTP4ETN.format(int(time.time() * 1000)), headers)
     except Exception as ex:
         print("[ETN] Can't get session code : ", ex)
         outputFile = open('lp_trading_trends_error.txt', 'w')
@@ -296,10 +289,11 @@ def etn_lp_trading_trends(tradedate, headers):
         driver.quit()
         return dfs
 
+    total_cnt = len(isu_cd_list)
     for idx, isu in enumerate(isu_cd_list):
         try:
-            print(idx, ':', isu['isu_cd'], '[', isu['isu_nm'], ']')
-            html_isu_info = etp_get_isu_info(URL_GET_ETP_INFO, isu, tradedate, PARAMS_GET_ETN_INFO_PAGEPATH, code.text, headers)
+            print('[ETN] ', idx, '/', total_cnt, ' : ', isu['isu_cd'], '[', isu['isu_nm'], ']')
+            html_isu_info = etp_get_isu_info(URL_GET_INFO, isu, tradedate, PARAMS_ETN_PAGEPATH, code.text, headers)
         except Exception as ex:
             print("[ETN] Can't get ISU info : ", ex)
             time.sleep(1)
@@ -316,12 +310,12 @@ def etn_lp_trading_trends(tradedate, headers):
 
 if __name__ == '__main__':
     try:
-        tradedate = get_pre_trade_date()  # 1일전 영업일을 구한다.
+        headers = {'User-Agent': USER_AGENT[platform.system()]}
+        tradedate = get_pre_trade_date(headers)  # 1일전 영업일을 구한다.
         if 0 > int(tradedate):
             print("[ERROR]: can't get trade_date")
             sys.exit(1)
         print('TRADE_DATE:', tradedate)
-        headers = {'User-Agent': USER_AGENT[platform.system()]}
 
         dfs_etf = etf_lp_trading_trends(tradedate, headers)
         dfs_etn = etn_lp_trading_trends(tradedate, headers)
