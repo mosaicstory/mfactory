@@ -295,7 +295,6 @@ try:
     chdrv.implicitly_wait(60)
 
     dfs_etf = etf_lp_trading_trends(base_date, chdrv)
-    print("#-"*80)
     sys.exit(0)
     dfs_etn = etn_lp_trading_trends(base_date, chdrv)
 
