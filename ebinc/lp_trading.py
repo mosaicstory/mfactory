@@ -161,7 +161,6 @@ def etf_lp_trading_trends(driver, basedate):
             session.mount('http://', adapter)
             r = session.post(url, data=data)
             print(r.text)
-            return None
         except Exception as ex:
             print("Exception:", ex)
             return None
@@ -302,7 +301,6 @@ try:
     chdrv.implicitly_wait(60)
 
     dfs_etf = etf_lp_trading_trends(chdrv, base_date)
-    sys.exit(0)
     dfs_etn = etn_lp_trading_trends(chdrv, base_date)
 
     # 웹드라이버 닫기
